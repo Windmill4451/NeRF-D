@@ -35,7 +35,22 @@ class NeRF(nn.Module):
         super().__init__()
 
         # TODO
-        raise NotImplementedError("Task 1")
+        
+        self.pos_dim = pos_dim
+        self.view_dir_dim = view_dir_dim
+        self.feat_dim = feat_dim
+        
+        self.linear1 = nn.Linear(pos_dim, 256)
+        self.linear2 = nn.Linear(256, 256)
+        self.linear3 = nn.Linear(256, 256)
+        self.linear4 = nn.Linear(256, 256)
+        self.linear5 = nn.Linear(256, 256)
+        self.linear6 = nn.Linear(256+pos_dim, 256)
+        self.linear7 = nn.Linear(256, 256)
+        self.linear8 = nn.Linear(256, 256)
+        self.linear9 = nn.Linear(256, feat_dim+1)
+        self.linear10 = nn.Linear(feat_dim+view_dir_dim, 128)
+        self.linear11 = nn.Linear(128, 3)
 
     @jaxtyped
     @typechecked
@@ -60,4 +75,28 @@ class NeRF(nn.Module):
         """
 
         # TODO
-        raise NotImplementedError("Task 1")
+        
+        relu = nn.ReLU()
+        sigmoid = nn.Sigmoid()
+        
+        x = relu(self.linear1(pos))
+        x = relu(self.linear2(x))
+        x = relu(self.linear3(x))
+        x = relu(self.linear4(x))
+        x = relu(self.linear5(x))
+        
+        x = torch.concat([x, pos], 1)
+        
+        x = relu(self.linear6(x))
+        x = relu(self.linear7(x))
+        x = relu(self.linear8(x))
+        x = self.linear9(x)
+        
+        sigma = relu(x[:, :1])
+        x = x[:, 1:]
+        x = torch.concat([x, view_dir], 1)
+        
+        x = relu(self.linear10(x))
+        radiance = sigmoid(self.linear11(x))
+        
+        return sigma, radiance
