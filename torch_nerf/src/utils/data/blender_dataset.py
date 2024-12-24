@@ -22,6 +22,7 @@ class NeRFBlenderDataset(data.Dataset):
         data_type: str,
         half_res: bool,
         white_bg: bool = True,
+        subset_indices: list = None
     ):
         """
         Constructor of 'NeRFBlenderDataset'.
@@ -54,6 +55,12 @@ class NeRFBlenderDataset(data.Dataset):
             self._render_poses,
             self._img_fnames,
         ) = load_blender_data(self._root_dir, self._data_type, half_res=half_res)
+        
+        # MODIFIED: Take subset of dataset
+        if subset_indices != None:
+            self._imgs = self._imgs[subset_indices]
+            self._poses = self._poses[subset_indices]
+            self._img_fnames = [self._img_fnames[ind] for ind in subset_indices]
 
         self._img_height = self._camera_params[0]
         self._img_width = self._camera_params[1]

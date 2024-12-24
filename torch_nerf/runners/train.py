@@ -33,12 +33,22 @@ from torch_nerf.runners.utils import (
 import torch_nerf.src.cameras.cameras as cameras
 from torch_nerf.src.utils.data import NeRFBlenderDataset, LLFFDataset
 
+import os
+import random
+import yaml
 
-def init_dataset_and_loader(cfg: DictConfig):
+random.seed(410)
+
+def init_dataset_and_loader(cfg: DictConfig, subset_size: int = None):
     """
     Initializes the dataset and loader.
     """
     dataset_type = str(cfg.data.dataset_type)
+    
+    if subset_size != None:
+        subset_indices = random.sample(list(range(100)), subset_size)
+    else:
+        subset_indices = None
 
     if dataset_type == "nerf_synthetic":
         train_dataset = NeRFBlenderDataset(
@@ -47,6 +57,7 @@ def init_dataset_and_loader(cfg: DictConfig):
             data_type="train",
             half_res=cfg.data.half_res,
             white_bg=cfg.data.white_bg,
+            subset_indices=subset_indices
         )
         train_loader = data.DataLoader(
             train_dataset,
@@ -61,6 +72,7 @@ def init_dataset_and_loader(cfg: DictConfig):
             data_type="val",
             half_res=cfg.data.half_res,
             white_bg=cfg.data.white_bg,
+            subset_indices=subset_indices
         )
         val_loader = data.DataLoader(
             val_dataset,
@@ -346,9 +358,23 @@ def validate_one_epoch(
     config_name="default",
 )
 def main(cfg: DictConfig) -> None:
+    for i in range(9,8,-1):
+        output_path = f'/root/NeRF-D/outputs/vanilla/subset_{i}'
+        subset_size = int(100 / 1.28**i)
+        
+        os.makedirs(output_path, exist_ok=True)
+        train_with_subset(cfg, subset_size, output_path)
+
+def train_with_subset(cfg: DictConfig, subset_size: int, output_path: str) -> None:
     """The entry point of training code."""
 
-    log_dir = Path(HydraConfig.get().runtime.output_dir)
+    log_dir = Path(output_path) #Path(HydraConfig.get().runtime.output_dir)
+    
+    config_dir = log_dir / ".hydra"
+    os.makedirs(config_dir, exist_ok=True)
+    with open(config_dir / "config.yaml", 'w') as file:
+        yaml.dump(OmegaConf.to_container(cfg), file)
+    
     if "log_dir" in cfg.keys():
 
         # identify existing log directory
@@ -359,6 +385,8 @@ def main(cfg: DictConfig) -> None:
         config_dir = log_dir / ".hydra"
         assert config_dir.exists(), "Provided log directory does not contain config directory."
         cfg = OmegaConf.load(config_dir / "config.yaml")
+    
+    print(f'Subset size: {subset_size} | Log directory: {log_dir}')
 
     # initialize Tensorboard writer
     tb_log_dir = log_dir / "tensorboard"
@@ -374,7 +402,7 @@ def main(cfg: DictConfig) -> None:
     renderer = init_renderer(cfg)
 
     # initialize dataset and loader
-    train_dataset, train_loader, val_dataset, val_loader = init_dataset_and_loader(cfg)
+    train_dataset, train_loader, val_dataset, val_loader = init_dataset_and_loader(cfg, subset_size)
 
     # initialize scene and network parameters
     default_scene, fine_scene = init_scene(cfg)
@@ -398,7 +426,7 @@ def main(cfg: DictConfig) -> None:
         scheduler,
     )
 
-    for epoch in tqdm(range(start_epoch, cfg.train_params.optim.num_iter // len(train_dataset))):
+    for epoch in tqdm(range(start_epoch, 500)): # cfg.train_params.optim.num_iter // len(train_dataset))):
 
         # train
         train_loss_dict = train_one_epoch(
