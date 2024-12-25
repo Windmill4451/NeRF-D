@@ -33,6 +33,7 @@ from torch_nerf.runners.utils import (
 import torch_nerf.src.cameras.cameras as cameras
 from torch_nerf.src.utils.data import NeRFBlenderDataset, LLFFDataset
 
+import argparse
 import os
 import random
 import yaml
@@ -49,6 +50,8 @@ def init_dataset_and_loader(cfg: DictConfig, subset_size: int = None):
         subset_indices = random.sample(list(range(100)), subset_size)
     else:
         subset_indices = None
+    
+    depth_dir = f'{cfg.data.data_root}/{cfg.data.scene_name}/train_depth_1'
 
     if dataset_type == "nerf_synthetic":
         train_dataset = NeRFBlenderDataset(
@@ -57,13 +60,14 @@ def init_dataset_and_loader(cfg: DictConfig, subset_size: int = None):
             data_type="train",
             half_res=cfg.data.half_res,
             white_bg=cfg.data.white_bg,
-            subset_indices=subset_indices
+            subset_indices=subset_indices,
+            depth_dir=depth_dir
         )
         train_loader = data.DataLoader(
             train_dataset,
             batch_size=cfg.data.batch_size,
             shuffle=cfg.data.shuffle,
-            num_workers=1,
+            num_workers=0 #1,
         )
 
         val_dataset = NeRFBlenderDataset(
@@ -102,6 +106,7 @@ def train_one_epoch(
     optimizer,
     scheduler,
     fine_scene=None,
+    nerf_d=False,
 ):
     """
     Training routine for one epoch.
@@ -117,7 +122,7 @@ def train_one_epoch(
         loss = 0.0
 
         # parse batch
-        pixel_gt, extrinsic = batch
+        pixel_gt, extrinsic, depth_gt = batch
         pixel_gt = pixel_gt.squeeze()
         pixel_gt = pixel_gt.reshape(-1, 3)  # (H, W, 3) -> (H * W, 3)
         extrinsic = extrinsic.squeeze()
@@ -187,7 +192,7 @@ def train_one_epoch(
         if not fine_scene is None:
 
             # forward prop.
-            fine_pred, _, _ = renderer.render_scene(
+            fine_pred, _, _, depth_pred = renderer.render_scene_with_depth(
                 fine_scene,
                 camera,
                 pixel_indices,
@@ -203,6 +208,15 @@ def train_one_epoch(
                 loss_dict["fine_loss"] = fine_loss.item()
             else:
                 loss_dict["fine_loss"] += fine_loss.item()
+            
+            # MODIFIED: apply depth prediction to loss function.
+            if nerf_d:
+                depth_loss = loss_func(depth_gt[0][pixel_indices, ...].to(depth_pred), depth_pred) / 100   # Other value?
+                loss += depth_loss
+                if "depth_loss" not in loss_dict:
+                    loss_dict["depth_loss"] = depth_loss.item()
+                else:
+                    loss_dict["depth_loss"] += depth_loss.item()
 
         if "loss" not in loss_dict:
             loss_dict["loss"] = loss.item()
@@ -358,14 +372,20 @@ def validate_one_epoch(
     config_name="default",
 )
 def main(cfg: DictConfig) -> None:
+    nerf_d = True
+    
     for i in range(9,8,-1):
-        output_path = f'/root/NeRF-D/outputs/vanilla/subset_{i}'
+        if nerf_d:
+            output_path = f'/root/NeRF-D/outputs/nerf_d_1/subset_{i}'
+        else:
+            output_path = f'/root/NeRF-D/outputs/vanilla/subset_{i}'
+        
         subset_size = int(100 / 1.28**i)
         
         os.makedirs(output_path, exist_ok=True)
-        train_with_subset(cfg, subset_size, output_path)
+        train_with_subset(cfg, subset_size, output_path, nerf_d)
 
-def train_with_subset(cfg: DictConfig, subset_size: int, output_path: str) -> None:
+def train_with_subset(cfg: DictConfig, subset_size: int, output_path: str, nerf_d: bool) -> None:
     """The entry point of training code."""
 
     log_dir = Path(output_path) #Path(HydraConfig.get().runtime.output_dir)
@@ -440,6 +460,7 @@ def train_with_subset(cfg: DictConfig, subset_size: int, output_path: str) -> No
             optimizer,
             scheduler,
             fine_scene=fine_scene,
+            nerf_d=nerf_d,
         )
         for loss_name, value in train_loss_dict.items():
             writer.add_scalar(f"train/{loss_name}", value, epoch)

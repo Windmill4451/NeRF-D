@@ -62,6 +62,35 @@ class VolumeRenderer(object):
         # =====================================================================
 
         return pixel_rgb, weights, ray_samples.t_samples
+    
+    def render_scene_with_depth(
+        self,
+        target_scene,
+        camera,
+        pixel_indices,
+        num_samples,
+        project_to_ndc,
+        weights=None,
+        prev_t_samples=None,  # hierarchical sampling
+        num_ray_batch=None,
+    ):
+        pixel_rgb, weights, t_samples = self.render_scene(
+            target_scene,
+            camera,
+            pixel_indices,
+            num_samples,
+            project_to_ndc,
+            weights,
+            prev_t_samples,
+            num_ray_batch,
+        )
+        
+        #white_bg = torch.all(pixel_rgb >= 0.99, dim=1).int()
+        
+        depths = torch.sum(weights*t_samples, dim=1)
+        #depths *= 1-white_bg
+        
+        return pixel_rgb, weights, t_samples, depths
 
     def render_ray_batches(
         self,

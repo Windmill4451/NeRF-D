@@ -9,6 +9,7 @@ import torch
 import torch.utils.data as data
 from torch_nerf.src.utils.data.load_blender import load_blender_data
 
+import os
 
 class NeRFBlenderDataset(data.Dataset):
     """
@@ -22,7 +23,8 @@ class NeRFBlenderDataset(data.Dataset):
         data_type: str,
         half_res: bool,
         white_bg: bool = True,
-        subset_indices: list = None
+        subset_indices: list = None,
+        depth_dir: str = None
     ):
         """
         Constructor of 'NeRFBlenderDataset'.
@@ -82,6 +84,16 @@ class NeRFBlenderDataset(data.Dataset):
                     f"{self._imgs.shape[0]} images and {self._poses.shape[0]} camera poses.",
                 )
             )
+        
+        self._depths = None
+        
+        if depth_dir != None:
+            self._depths = []
+            
+            for depth_file_path in os.listdir(depth_dir):
+                depth = torch.load(f'{depth_dir}/{depth_file_path}')
+                
+                self._depths.append(depth)
 
     def __len__(self) -> int:
         """Returns the total number of data in the dataset."""
@@ -100,6 +112,11 @@ class NeRFBlenderDataset(data.Dataset):
         """
         img = torch.tensor(self._imgs[index])
         pose = torch.tensor(self._poses[index])
+        
+        if self._depths != None:
+            depth = self._depths[index]
+                
+            return img, pose, depth
 
         return img, pose
 
